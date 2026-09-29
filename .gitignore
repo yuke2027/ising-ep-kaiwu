@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+runs/
+vendor/*.whl
+*.lic
+.env
+.DS_Store
+.devin/
+evidence/
+checkpoints/
+kaiwu-checkpoints/
+*.log
+delivery/
+upstream/

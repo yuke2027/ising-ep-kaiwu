@@ -1,0 +1,63 @@
+[project]
+name = "ising-ep-kaiwu"
+version = "2.0.0"
+description = "PyTorch equilibrium-propagation Ising experiment using official Kaiwu APIs"
+requires-python = "==3.10.*"
+dependencies = [
+  "numpy==2.2.6",
+  "torch==2.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.5",
+  "pylint==3.3.2",
+  "pydocstyle[toml]==6.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+  "integration: tests that require the licensed Kaiwu SDK",
+]
+
+[tool.pydocstyle]
+convention = "google"
+add_select = ["D213"]
+add_ignore = ["D202", "D203", "D406", "D407", "D413"]
+
+[tool.pylint.master]
+ignore-paths = [".venv", "runs", "data", "dist", "build"]
+extension-pkg-allow-list = ["torch"]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.basic]
+good-names = ["i", "j", "x", "y", "h", "o", "W", "V", "b_h", "b_o", "kw", "_"]
+
+[tool.pylint.messages_control]
+disable = [
+  "too-many-arguments",
+  "too-many-positional-arguments",
+  "too-many-locals",
+  "too-many-branches",
+  "too-many-statements",
+  "too-few-public-methods",
+  "duplicate-code",
+  "import-error",
+  "no-name-in-module",
+  "wrong-import-position",
+  "broad-exception-caught",
+  "line-too-long",
+  "missing-module-docstring",
+  "invalid-name",
+  "abstract-method",
+  "too-many-instance-attributes",
+  "too-many-return-statements",
+  "import-outside-toplevel",
+  "protected-access",
+  "unused-argument",
+  "no-member",
+]
