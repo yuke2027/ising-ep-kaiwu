@@ -1,4 +1,8 @@
-"""Characterization tests for model parameters, targets, fields and prediction."""
+"""Tests for the Ising EP model: initialization, targets, energy and prediction."""
+
+# Test functions document intent in their summary; parametrised values do not
+# benefit from Args sections.
+# pylint: disable=missing-param-doc,missing-return-doc
 
 from __future__ import annotations
 
@@ -7,107 +11,301 @@ import pytest
 import torch
 
 from ising_ep.model import IsingEPModel
-from src.ising_ep.mapping import energy
-from src.ising_ep.model import IsingEPModel as SourceIsingEPModel
 
 from tests.conftest import set_parameter, to_numpy
 
 
-def test_parameter_shapes_and_same_seed_reproducibility() -> None:
-    """Same seeds reproduce float64 parameter shapes; different seeds do not."""
-    first = IsingEPModel(n_in=5, n_hidden=3, n_classes=2, spins_per_class=2, seed=7)
-    second = IsingEPModel(n_in=5, n_hidden=3, n_classes=2, spins_per_class=2, seed=7)
-    different = IsingEPModel(n_in=5, n_hidden=3, n_classes=2, spins_per_class=2, seed=8)
+def test_same_seed_reproduces_parameters_and_shapes() -> None:
+    """One seed fully determines the initial parameters."""
+    first = IsingEPModel(n_in=5, hidden_sizes=3, n_classes=2, spins_per_class=2, seed=7)
+    second = IsingEPModel(n_in=5, hidden_sizes=3, n_classes=2, spins_per_class=2, seed=7)
+    other = IsingEPModel(n_in=5, hidden_sizes=3, n_classes=2, spins_per_class=2, seed=8)
 
-    for key in ("W", "V", "b_h", "b_o"):
-        np.testing.assert_allclose(to_numpy(first.numpy_params()[key]), to_numpy(second.numpy_params()[key]))
-    assert not np.array_equal(to_numpy(first.numpy_params()["W"]), to_numpy(different.numpy_params()["W"]))
-    assert to_numpy(first.numpy_params()["W"]).shape == (5, 3)
-    assert to_numpy(first.numpy_params()["V"]).shape == (3, 4)
-    assert to_numpy(first.numpy_params()["b_h"]).shape == (3,)
-    assert to_numpy(first.numpy_params()["b_o"]).shape == (4,)
-
-
-def test_target_spins_encode_four_spin_class_blocks() -> None:
-    """Class labels become four-spin +1 blocks on a -1 background."""
-    model = IsingEPModel(n_in=2, n_hidden=2, n_classes=10, spins_per_class=4)
-    encoded = to_numpy(model.target_spins([0, 3, 9]))
-
-    assert encoded.shape == (3, 40)
-    np.testing.assert_array_equal(encoded[0, :4], 1.0)
-    np.testing.assert_array_equal(encoded[1, 12:16], 1.0)
-    np.testing.assert_array_equal(encoded[2, 36:40], 1.0)
-    np.testing.assert_array_equal(encoded.sum(axis=1), np.full(3, -32.0))
+    left = first.parameter_snapshot()
+    right = second.parameter_snapshot()
+    for key, shape in (
+        ("weights.0", (5, 3)),
+        ("weights.1", (3, 4)),
+        ("biases.0", (3,)),
+        ("biases.1", (4,)),
+    ):
+        np.testing.assert_allclose(to_numpy(left[key]), to_numpy(right[key]))
+        assert tuple(left[key].shape) == shape
+        assert left[key].dtype == torch.float64
+    assert not np.array_equal(
+        to_numpy(left["weights.0"]), to_numpy(other.parameter_snapshot()["weights.0"])
+    )
+    assert first.layer_sizes == (5, 3, 4)
+    assert first.n_hidden == 3
 
 
-def test_fields_match_reference_linear_formulas() -> None:
-    """Local fields follow ``W.T @ x + b_h`` and ``b_o + beta * y``."""
-    model = IsingEPModel(n_in=3, n_hidden=2, n_classes=2, spins_per_class=2, seed=3)
-    params = {name: to_numpy(value) for name, value in model.numpy_params().items()}
-    x = np.array([0.2, -0.4, 0.7])
-    y = to_numpy(model.target_spins([1]))[0]
+def test_integer_hidden_size_is_a_single_layer() -> None:
+    """An integer width is the one-hidden-layer network."""
+    model = IsingEPModel(n_in=4, hidden_sizes=8, n_classes=2, spins_per_class=2, seed=1)
 
-    hidden, output = model.fields(x, y, beta=0.6)
-
-    np.testing.assert_allclose(to_numpy(hidden), params["W"].T @ x + params["b_h"])
-    np.testing.assert_allclose(to_numpy(output), params["b_o"] + 0.6 * y)
+    assert model.hidden_sizes == (8,)
+    assert model.layer_sizes == (4, 8, 4)
 
 
-def test_prediction_uses_output_block_sum_then_local_field_tie_break() -> None:
-    """Class scores use output-block sums, then local fields on a tie."""
-    model = IsingEPModel(n_in=2, n_hidden=2, n_classes=4, spins_per_class=2, seed=4)
-    set_parameter(model.V, np.zeros((2, 8)))
-    set_parameter(model.b_o, np.zeros(8))
-    hidden = np.zeros(2)
+def test_couplings_start_within_the_inverse_sqrt_fan_in_range() -> None:
+    """Initialization stays inside ``+-1/sqrt(fan_in)`` for each coupling."""
+    model = IsingEPModel(n_in=64, hidden_sizes=16, n_classes=2, spins_per_class=2, seed=3)
+    params = model.parameter_snapshot()
 
-    output = np.array([1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0])
-    prediction, tied = model.predict_from_output(output, hidden)
-    assert prediction == 0
-    assert tied is True
-
-    output = np.array([-1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0])
-    prediction, tied = model.predict_from_output(output, hidden)
-    assert prediction == 1
-    assert tied is False
+    assert to_numpy(params["weights.0"]).max() <= 1.0 / np.sqrt(64)
+    assert to_numpy(params["weights.0"]).min() >= -1.0 / np.sqrt(64)
+    assert to_numpy(params["weights.1"]).max() <= 1.0 / np.sqrt(16)
+    assert to_numpy(params["weights.1"]).min() >= -1.0 / np.sqrt(16)
+    np.testing.assert_array_equal(to_numpy(params["biases.0"]), np.zeros(16))
 
 
-def test_invalid_target_label_is_rejected() -> None:
-    """Labels outside the class range raise ``ValueError``."""
-    model = IsingEPModel(n_in=2, n_hidden=2, n_classes=3, spins_per_class=2)
-    with pytest.raises(ValueError):
-        model.target_spins([3])
+def test_biases_are_learnable_parameters() -> None:
+    """Every weight and bias participates in gradient descent."""
+    model = IsingEPModel(n_in=3, hidden_sizes=2, n_classes=2, spins_per_class=2)
+
+    assert {name for name, _ in model.named_parameters()} == {
+        "weights.0",
+        "weights.1",
+        "biases.0",
+        "biases.1",
+    }
 
 
-def test_parameter_snapshot_is_independent_of_optimizer_updates() -> None:
-    """A parameter snapshot stays unchanged after the live weights move."""
-    model = IsingEPModel(n_in=2, n_hidden=2, n_classes=1, spins_per_class=2, seed=9)
-    snapshot = model.parameter_snapshot()
-    with torch.no_grad():
-        model.W.add_(1.0)
-    np.testing.assert_allclose(to_numpy(snapshot["W"]), to_numpy(model.numpy_params()["W"]) - 1.0)
-    assert snapshot["W"].data_ptr() != model.W.data_ptr()
+def test_target_spins_encode_one_class_block_per_label() -> None:
+    """A label maps to a +1 block on a -1 background, one sample at a time."""
+    model = IsingEPModel(n_in=2, hidden_sizes=2, n_classes=10, spins_per_class=4)
+
+    for label, start in ((0, 0), (3, 12), (9, 36)):
+        encoded = to_numpy(model.target_spins(label))
+        assert encoded.shape == (40,)
+        np.testing.assert_array_equal(encoded[start : start + 4], 1.0)
+        assert encoded.sum() == pytest.approx(-32.0)
 
 
-def test_legacy_model_import_is_src_implementation() -> None:
-    """The compatibility package re-exports the ``src`` model class."""
-    assert IsingEPModel is SourceIsingEPModel
+def test_target_spins_rejects_a_label_outside_the_class_range() -> None:
+    """Labels must name an existing class."""
+    model = IsingEPModel(n_in=2, hidden_sizes=2, n_classes=3, spins_per_class=2)
+
+    with pytest.raises(ValueError, match=r"label must be in \[0, 3\)"):
+        model.target_spins(3)
 
 
-def test_model_energy_matches_mapping_energy() -> None:
-    """``IsingEPModel.energy`` matches ``mapping.energy`` within ``1e-12``."""
-    model = IsingEPModel(n_in=4, n_hidden=3, n_classes=2, spins_per_class=2, seed=2)
+def test_energy_matches_the_written_out_bilinear_form() -> None:
+    """``energy`` equals the closed-form EP energy for one hidden layer."""
+    model = IsingEPModel(n_in=4, hidden_sizes=3, n_classes=2, spins_per_class=2, seed=2)
     x = np.array([0.2, -0.5, 0.1, 0.8])
     hidden = np.array([1.0, -1.0, 1.0])
     output = np.array([1.0, -1.0, -1.0, 1.0])
-    params = model.numpy_params()
-    mapped = energy(x, hidden, output, params["W"], params["V"], params["b_h"], params["b_o"])
-    closed = float(
-        -x @ params["W"] @ hidden
-        - hidden @ params["V"] @ output
-        - params["b_h"] @ hidden
-        - params["b_o"] @ output
-    )
-    observed = float(model.energy(x, hidden, output).detach().cpu())
+    params = {name: to_numpy(value) for name, value in model.parameter_snapshot().items()}
 
-    assert mapped == pytest.approx(closed, abs=1e-12)
-    assert observed == pytest.approx(mapped, abs=1e-12)
+    expected = float(
+        -x @ params["weights.0"] @ hidden
+        - hidden @ params["weights.1"] @ output
+        - params["biases.0"] @ hidden
+        - params["biases.1"] @ output
+    )
+
+    assert float(model.energy(x, [hidden, output])) == pytest.approx(expected, abs=1e-12)
+
+
+def test_stacked_energy_sums_every_adjacent_layer() -> None:
+    """Two hidden layers add one extra bilinear term and one extra bias."""
+    model = IsingEPModel(n_in=3, hidden_sizes=(2, 2), n_classes=2, spins_per_class=1, seed=4)
+    x = np.array([0.2, -0.1, 0.5])
+    first = np.array([1.0, -1.0])
+    second = np.array([-1.0, 1.0])
+    output = np.array([1.0, -1.0])
+    params = {name: to_numpy(value) for name, value in model.parameter_snapshot().items()}
+
+    expected = float(
+        -x @ params["weights.0"] @ first
+        - first @ params["weights.1"] @ second
+        - second @ params["weights.2"] @ output
+        - params["biases.0"] @ first
+        - params["biases.1"] @ second
+        - params["biases.2"] @ output
+    )
+
+    assert float(model.energy(x, [first, second, output])) == pytest.approx(expected, abs=1e-12)
+    assert model.layer_sizes == (3, 2, 2, 2)
+
+
+def test_energy_returns_a_scalar_that_tracks_parameter_gradients() -> None:
+    """The energy stays differentiable in the parameters, not in the spins."""
+    model = IsingEPModel(n_in=3, hidden_sizes=2, n_classes=2, spins_per_class=2, seed=5)
+
+    value = model.energy(np.ones(3), [np.ones(2), np.ones(4)])
+    assert value.ndim == 0
+    value.backward()
+
+    # dE/dW = -s_prev (x) s, so every entry is -1 for all-ones inputs.
+    np.testing.assert_allclose(to_numpy(model.weights[0].grad), -np.ones((3, 2)))
+    np.testing.assert_allclose(to_numpy(model.weights[1].grad), -np.ones((2, 4)))
+    np.testing.assert_allclose(to_numpy(model.biases[0].grad), -np.ones(2))
+    np.testing.assert_allclose(to_numpy(model.biases[1].grad), -np.ones(4))
+
+
+def test_middle_layer_gradient_is_the_adjacent_outer_product() -> None:
+    """Each stacked weight's gradient is ``-s_left (x) s_right``."""
+    model = IsingEPModel(n_in=2, hidden_sizes=(2, 3), n_classes=2, spins_per_class=1, seed=5)
+    first = np.array([1.0, -1.0])
+    second = np.array([1.0, 1.0, -1.0])
+    output = np.array([-1.0, 1.0])
+
+    model.energy(np.ones(2), [first, second, output]).backward()
+
+    np.testing.assert_allclose(to_numpy(model.weights[1].grad), -np.outer(first, second))
+    np.testing.assert_allclose(to_numpy(model.weights[2].grad), -np.outer(second, output))
+
+
+def test_cost_is_the_linear_form_of_the_squared_output_error() -> None:
+    """``C = n_output - target . output`` equals ``0.5 * ||o - y||**2``."""
+    model = IsingEPModel(n_in=2, hidden_sizes=2, n_classes=2, spins_per_class=2)
+    target = model.target_spins(0)
+    output = torch.tensor([1.0, 1.0, 1.0, -1.0], dtype=torch.float64)
+
+    observed = float(model.cost(output, target))
+
+    assert observed == pytest.approx(2.0)
+    assert observed == pytest.approx(
+        0.5 * float(((output - target) ** 2).sum())
+    )
+
+
+def test_cost_is_zero_when_the_output_equals_the_target() -> None:
+    """A perfect output costs nothing."""
+    model = IsingEPModel(n_in=2, hidden_sizes=2, n_classes=3, spins_per_class=2)
+    target = model.target_spins(2)
+
+    assert float(model.cost(target, target)) == pytest.approx(0.0)
+
+
+def test_fields_match_the_reference_linear_formulas() -> None:
+    """Local fields follow ``x W + b`` and ``b_out + beta * target``."""
+    model = IsingEPModel(n_in=3, hidden_sizes=2, n_classes=2, spins_per_class=2, seed=3)
+    params = {name: to_numpy(value) for name, value in model.parameter_snapshot().items()}
+    x = np.array([0.2, -0.4, 0.7])
+    target = to_numpy(model.target_spins(1))
+
+    fields = model.fields(x, target, beta=0.6)
+    hidden_field, output_field = fields[0], fields[1]
+
+    np.testing.assert_allclose(
+        to_numpy(hidden_field), params["weights.0"].T @ x + params["biases.0"]
+    )
+    np.testing.assert_allclose(to_numpy(output_field), params["biases.1"] + 0.6 * target)
+
+
+def test_middle_field_is_only_the_bias() -> None:
+    """A layer with spin neighbours on both sides carries no clamped input."""
+    model = IsingEPModel(n_in=2, hidden_sizes=(2, 3), n_classes=1, spins_per_class=2, seed=3)
+    params = {name: to_numpy(value) for name, value in model.parameter_snapshot().items()}
+
+    fields = model.fields(np.ones(2), model.target_spins(0), beta=0.4)
+
+    np.testing.assert_allclose(to_numpy(fields[1]), params["biases.1"])
+    assert len(fields) == 3
+
+
+def test_free_phase_output_field_drops_the_target() -> None:
+    """With beta = 0 the output field carries no label information."""
+    model = IsingEPModel(n_in=2, hidden_sizes=2, n_classes=2, spins_per_class=2, seed=1)
+
+    fields = model.fields(np.ones(2), model.target_spins(0), beta=0.0)
+
+    np.testing.assert_allclose(
+        to_numpy(fields[-1]), to_numpy(model.parameter_snapshot()["biases.1"])
+    )
+
+
+def test_prediction_uses_block_sums_then_local_field_tie_break() -> None:
+    """Class scores are block sums; ties fall through to the local field."""
+    model = IsingEPModel(n_in=2, hidden_sizes=2, n_classes=4, spins_per_class=2, seed=4)
+    set_parameter(model.weights[1], np.zeros((2, 8)))
+    set_parameter(model.biases[1], np.zeros(8))
+    hidden = np.zeros(2)
+
+    tied_output = np.array([1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, -1.0])
+    prediction, tied = model.predict([hidden, tied_output])
+    assert (prediction, tied) == (0, True)
+
+    clear_output = np.array([-1.0, -1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0])
+    prediction, tied = model.predict([hidden, clear_output])
+    assert (prediction, tied) == (1, False)
+
+
+def test_prediction_tie_break_prefers_the_stronger_local_field() -> None:
+    """Among tied blocks the larger output local field wins."""
+    model = IsingEPModel(n_in=2, hidden_sizes=1, n_classes=2, spins_per_class=1, seed=4)
+    set_parameter(model.weights[1], np.zeros((1, 2)))
+    set_parameter(model.biases[1], np.array([0.0, 5.0]))
+
+    prediction, tied = model.predict([np.zeros(1), np.array([1.0, 1.0])])
+
+    assert (prediction, tied) == (1, True)
+
+
+def test_parameter_snapshot_is_independent_of_later_updates() -> None:
+    """A snapshot keeps its values after the live weights move."""
+    model = IsingEPModel(n_in=2, hidden_sizes=2, n_classes=1, spins_per_class=2, seed=9)
+    snapshot = model.parameter_snapshot()
+
+    with torch.no_grad():
+        model.weights[0].add_(1.0)
+
+    np.testing.assert_allclose(
+        to_numpy(snapshot["weights.0"]),
+        to_numpy(model.parameter_snapshot()["weights.0"]) - 1.0,
+    )
+    assert snapshot["weights.0"].data_ptr() != model.weights[0].data_ptr()
+
+
+def test_default_init_gains_match_explicit_ones() -> None:
+    """Omitting ``init_gains`` is the same as passing a 1 for every connection."""
+    omitted = IsingEPModel(n_in=5, hidden_sizes=3, n_classes=2, spins_per_class=2, seed=7)
+    explicit = IsingEPModel(
+        n_in=5,
+        hidden_sizes=3,
+        n_classes=2,
+        spins_per_class=2,
+        seed=7,
+        init_gains=(1.0, 1.0),
+    )
+
+    left = omitted.parameter_snapshot()
+    right = explicit.parameter_snapshot()
+    for key in left:
+        np.testing.assert_allclose(to_numpy(left[key]), to_numpy(right[key]))
+    assert omitted.init_gains == (1.0, 1.0)
+
+
+def test_init_gains_scale_the_uniform_range() -> None:
+    """Each connection's draw stays inside ``+-gain/sqrt(fan_in)``."""
+    model = IsingEPModel(
+        n_in=64,
+        hidden_sizes=16,
+        n_classes=2,
+        spins_per_class=2,
+        seed=3,
+        init_gains=(0.5, 2.0),
+    )
+    params = model.parameter_snapshot()
+
+    assert to_numpy(params["weights.0"]).max() <= 0.5 / np.sqrt(64)
+    assert to_numpy(params["weights.0"]).min() >= -0.5 / np.sqrt(64)
+    assert to_numpy(params["weights.1"]).max() <= 2.0 / np.sqrt(16)
+    assert to_numpy(params["weights.1"]).min() >= -2.0 / np.sqrt(16)
+
+
+def test_init_gains_rejects_the_wrong_length_or_a_non_positive_value() -> None:
+    """The gain list must match the number of connections and stay positive."""
+    with pytest.raises(ValueError, match="init_gains must have length 2"):
+        IsingEPModel(n_in=4, hidden_sizes=3, n_classes=2, spins_per_class=1, init_gains=(1.0,))
+    with pytest.raises(ValueError, match="strictly positive"):
+        IsingEPModel(
+            n_in=4,
+            hidden_sizes=3,
+            n_classes=2,
+            spins_per_class=1,
+            init_gains=(1.0, 0.0),
+        )

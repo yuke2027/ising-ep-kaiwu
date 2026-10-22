@@ -6,6 +6,7 @@ requires-python = "==3.10.*"
 dependencies = [
   "numpy==2.2.6",
   "torch==2.7.0",
+  "kaiwu==1.3.1",
 ]
 
 [project.optional-dependencies]
@@ -18,6 +19,8 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# `ising_ep` lives in src/. This lets pytest import it without an editable install.
+pythonpath = [".", "src"]
 markers = [
   "integration: tests that require the licensed Kaiwu SDK",
 ]
@@ -28,6 +31,7 @@ add_select = ["D213"]
 add_ignore = ["D202", "D203", "D406", "D407", "D413"]
 
 [tool.pylint.master]
+load-plugins = ["pylint.extensions.docparams"]
 ignore-paths = [".venv", "runs", "data", "dist", "build"]
 extension-pkg-allow-list = ["torch"]
 

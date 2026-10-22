@@ -1,10 +1,16 @@
-"""Reusable PyTorch Ising EP core.
+"""Reusable PyTorch Ising equilibrium-propagation core.
 
-This package intentionally contains no Kaiwu dependency. Official SDK access is
-kept at the ``examples.mnist_kaiwu`` boundary.
+The energy and the QUBO mapping live on :class:`IsingEPModel`. The only module
+that touches the licensed Kaiwu SDK is :mod:`ising_ep.kaiwu_solver`, which is
+imported lazily so the rest of the package works without the enterprise wheel.
 """
 
+from .kaiwu_solver import AnnealSettings, KaiwuSolver, init_license
 from .model import IsingEPModel
-from .mapping import QuboProblem
 
-__all__ = ["IsingEPModel", "QuboProblem"]
+__all__ = [
+    "AnnealSettings",
+    "IsingEPModel",
+    "KaiwuSolver",
+    "init_license",
+]
