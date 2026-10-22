@@ -15,3 +15,5 @@ kaiwu-checkpoints/
 *.log
 delivery/
 upstream/
+archive/ising-ep-kaiwu-delivery/
+archive/runs-alignment-h64-e5/

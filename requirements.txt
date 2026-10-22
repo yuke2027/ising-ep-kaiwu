@@ -1,9 +1,10 @@
-# Python 3.10 only (Kaiwu SDK requirement).
-# Public runtime and development dependencies. The Kaiwu 1.4.1 enterprise wheel
-# is not on public PyPI; install the downloaded cp310 wheel separately, e.g.
-#   .venv\Scripts\python.exe -m pip install vendor\kaiwu-1.4.1-cp310-none-win_amd64.whl
+# Python 3.10 (matches kaiwu-pytorch-plugin).
+# Public runtime and development dependencies. Pin kaiwu to the upstream plugin
+# baseline. If PyPI is unreachable, install the downloaded cp310 wheel, e.g.
+#   .venv\Scripts\python.exe -m pip install vendor\kaiwu-1.3.1-cp310-none-win_amd64.whl
 numpy==2.2.6
 torch==2.7.0
+kaiwu==1.3.1
 pytest==8.3.5
 pylint==3.3.2
 pydocstyle[toml]==6.3.0
