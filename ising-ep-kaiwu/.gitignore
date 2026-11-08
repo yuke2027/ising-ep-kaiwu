@@ -1,0 +1,24 @@
+# Virtual environments
+.venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Build and install artifacts
+*.egg-info/
+build/
+dist/
+
+# Test and tool caches
+.pytest_cache/
+
+# Experiment output
+runs/
+
+# Credentials and licenses: never commit these
+.env
+*.lic
+
+*.log
+.DS_Store
