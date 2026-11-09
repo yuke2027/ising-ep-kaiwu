@@ -162,9 +162,9 @@ def load_digits_splits(
     if not 0.0 <= validation_fraction < 1.0:
         raise ValueError(f"validation_fraction must lie in [0, 1), got {validation_fraction}")
 
-    bunch = load_digits()
-    images = normalize_pixels(bunch.data)
-    labels = np.asarray(bunch.target, dtype=np.int64)
+    pixels, targets = load_digits(return_X_y=True)
+    images = normalize_pixels(pixels)
+    labels = np.asarray(targets, dtype=np.int64)
     positions = np.arange(labels.shape[0])
 
     train_positions, test_positions = train_test_split(
