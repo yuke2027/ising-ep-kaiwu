@@ -173,6 +173,13 @@ succeeds without it). The archived result was
 produced on 1.4.1. The 1.4 line asks for a user id and SDK code before the first
 anneal (see `.env.example`); 1.3.1 does not. The wheels target **Python 3.10**.
 
+The integration tests have run against the real 1.3.1 and 1.4.1 wheels; 1.4.2
+and 1.4.3 are inside the declared range but have not been run. The 1.4 wheel
+gets `kaiwu/__init__.py` and `kaiwu.core` from its `kaiwu-community` dependency.
+Replacing 1.3.1 with 1.4.x in the same environment deletes those shared files,
+so run `pip install --force-reinstall --no-deps kaiwu-community==1.0.7`
+afterwards, or start from a fresh environment.
+
 ```powershell
 py -3.10 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip

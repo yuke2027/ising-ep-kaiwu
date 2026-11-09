@@ -126,6 +126,8 @@ records/ep-p0/           上游插件环境准备记录
 
 支持的 Kaiwu 版本为 1.3.1 到 1.4.3（`pyproject.toml` 只在可选的 `kaiwu` 额外项里写了 `kaiwu>=1.3.1,<=1.4.3`，因为 wheel 不在 PyPI 上；请按下文手动安装 wheel，没有它时 `pip install -e` 也能成功）。归档结果产生于 1.4.1。1.4 系列在第一次退火前会要求用户 ID 和 SDK 码（见 `.env.example`），1.3.1 不需要。这些 wheel 面向 **Python 3.10**。
 
+集成测试已在真实的 1.3.1 和 1.4.1 wheel 上跑过；1.4.2 和 1.4.3 在声明范围内，但没有实测。1.4 的 wheel 依赖 `kaiwu-community` 提供 `kaiwu/__init__.py` 和 `kaiwu.core`。在同一个环境里把 1.3.1 换成 1.4.x 会删掉这些共用文件，换完后要执行 `pip install --force-reinstall --no-deps kaiwu-community==1.0.7`，或者直接新建环境。
+
 ```powershell
 py -3.10 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
