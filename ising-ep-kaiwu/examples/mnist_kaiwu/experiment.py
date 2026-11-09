@@ -454,23 +454,73 @@ def aggregate(results: Sequence[dict[str, Any]], n_classes: int = 10) -> dict[st
     }
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the command-line parser.
+def run_seeds(
+    config: RunConfig,
+    solver: KaiwuSolver,
+    train: tuple[np.ndarray, np.ndarray],
+    test: tuple[np.ndarray, np.ndarray],
+    output_dir: Path,
+    *,
+    validation: tuple[np.ndarray, np.ndarray] | None = None,
+) -> dict[str, Any]:
+    """Run every configured seed and write the cross-seed ``summary.json``.
+
+    The dataset only enters through the arrays, so every example shares this
+    loop: MNIST/100 and sklearn Digits differ in their loaders alone.
+
+    Args:
+        config: Run configuration shared by all seeds.
+        solver: Annealer bound to the shared schedule.
+        train: Training images and labels.
+        test: Test images and labels.
+        output_dir: Directory receiving ``seeds/<seed>/`` and ``summary.json``.
+        validation: Validation images and labels, if a validation split exists.
 
     Returns:
-        Parser accepting the output directory, data root, seeds, model and
-        training hyperparameters, and the annealing schedule.
+        The cross-seed summary written to ``summary.json``.
     """
-    parser = argparse.ArgumentParser(
-        description="Train and evaluate the Ising EP network on MNIST/100 via Kaiwu."
+    output_dir = Path(output_dir)
+    results = []
+    for seed in config.seeds:
+        status = run_seed(
+            config,
+            solver,
+            train[0],
+            train[1],
+            test[0],
+            test[1],
+            int(seed),
+            output_dir / "seeds" / str(int(seed)),
+            validation_images=None if validation is None else validation[0],
+            validation_labels=None if validation is None else validation[1],
+        )
+        results.append(status)
+        print(f"seed {seed}: accuracy={status['accuracy']:.4f} tie_rate={status['tie_rate']:.4f}")
+
+    summary = aggregate(results, n_classes=config.n_classes)
+    write_json(output_dir / "summary.json", summary)
+    accuracy = summary["accuracy"]
+    print(
+        f"{summary['n_seeds']} seed(s): accuracy mean={accuracy['mean']:.4f} "
+        f"std={accuracy['std']:.4f} min={accuracy['min']:.4f} max={accuracy['max']:.4f}"
     )
+    print("wrote", output_dir / "summary.json")
+    return summary
+
+
+def add_run_arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """Add the options every EP example shares: model, training and annealing.
+
+    Dataset-specific options (where the data lives, how it is split) are added
+    by each example's own parser.
+
+    Args:
+        parser: Parser to extend in place.
+
+    Returns:
+        The same parser, for chaining.
+    """
     parser.add_argument("--output", required=True, help="Directory receiving run artifacts")
-    parser.add_argument("--data-root", default="data", help="Directory holding MNIST/raw")
-    parser.add_argument(
-        "--download-data",
-        action="store_true",
-        help="Download missing MNIST archives instead of failing",
-    )
     parser.add_argument("--seeds", default="0,1,2", help="Comma-separated experiment seeds")
     parser.add_argument("--n-hidden", type=int, default=64, help="Width of a single hidden layer")
     parser.add_argument(
@@ -509,12 +559,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--iterations-per-t", type=int, default=10)
     parser.add_argument("--candidate-count", type=int, default=8)
     parser.add_argument(
-        "--validation-per-class",
-        type=int,
-        default=0,
-        help="Hold out this many extra training-file images per class for validation",
-    )
-    parser.add_argument(
         "--eval-every-epoch",
         action="store_true",
         help="Score the validation split after every epoch",
@@ -525,6 +569,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Never evaluate the test split; report validation accuracy instead",
     )
     return parser
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the MNIST/100 command-line parser.
+
+    Returns:
+        Parser accepting the output directory, data root, seeds, model and
+        training hyperparameters, and the annealing schedule.
+    """
+    parser = argparse.ArgumentParser(
+        description="Train and evaluate the Ising EP network on MNIST/100 via Kaiwu."
+    )
+    parser.add_argument("--data-root", default="data", help="Directory holding MNIST/raw")
+    parser.add_argument(
+        "--download-data",
+        action="store_true",
+        help="Download missing MNIST archives instead of failing",
+    )
+    parser.add_argument(
+        "--validation-per-class",
+        type=int,
+        default=0,
+        help="Hold out this many extra training-file images per class for validation",
+    )
+    return add_run_arguments(parser)
 
 
 def config_from_args(args: argparse.Namespace) -> RunConfig:
@@ -558,7 +627,8 @@ def config_from_args(args: argparse.Namespace) -> RunConfig:
             iterations_per_t=args.iterations_per_t,
             candidate_count=args.candidate_count,
         ),
-        validation_per_class=int(args.validation_per_class),
+        # Only the MNIST parser defines this option.
+        validation_per_class=int(getattr(args, "validation_per_class", 0)),
         eval_every_epoch=bool(args.eval_every_epoch),
         skip_test=bool(args.skip_test),
     )
@@ -595,33 +665,18 @@ def main(argv: list[str] | None = None) -> int:
             config.validation_per_class,
             download_if_missing=args.download_data,
         )
-    solver = KaiwuSolver(config.anneal)
-
-    results = []
-    for seed in config.seeds:
-        status = run_seed(
-            config,
-            solver,
-            train_split.images,
-            train_split.labels,
-            test_split.images,
-            test_split.labels,
-            int(seed),
-            output_dir / "seeds" / str(int(seed)),
-            validation_images=None if validation_split is None else validation_split.images,
-            validation_labels=None if validation_split is None else validation_split.labels,
-        )
-        results.append(status)
-        print(f"seed {seed}: accuracy={status['accuracy']:.4f} tie_rate={status['tie_rate']:.4f}")
-
-    summary = aggregate(results, n_classes=config.n_classes)
-    write_json(output_dir / "summary.json", summary)
-    accuracy = summary["accuracy"]
-    print(
-        f"{summary['n_seeds']} seed(s): accuracy mean={accuracy['mean']:.4f} "
-        f"std={accuracy['std']:.4f} min={accuracy['min']:.4f} max={accuracy['max']:.4f}"
+    run_seeds(
+        config,
+        KaiwuSolver(config.anneal),
+        (train_split.images, train_split.labels),
+        (test_split.images, test_split.labels),
+        output_dir,
+        validation=(
+            None
+            if validation_split is None
+            else (validation_split.images, validation_split.labels)
+        ),
     )
-    print("wrote", output_dir / "summary.json")
     return 0
 
 
