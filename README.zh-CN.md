@@ -107,9 +107,15 @@ examples/mnist_kaiwu/    MNIST/100 实验
   metrics.py             准确率、动力学与学习证据
   artifacts.py           JSON/NPZ 写入，以及可选的凭证读取
   experiment.py          命令行入口
+examples/digits_kaiwu/   sklearn Digits 实验与反向传播对照
 tests/unit/              不需要 SDK，也不需要凭证
 tests/integration/       没有授权 SDK 时自动跳过
 results/primary/         归档的三次种子运行（只读证据）
+results/tuned/           归档的调参运行
+docs/                    Kaiwu SDK 实操手册
+tools/ep_p0/             上游插件环境准备工具，不属于本包
+records/ep-p0/           上游插件环境准备记录
+.kiro/specs/             各阶段规格
 ```
 
 只有 `kaiwu_solver.py` 接触 SDK，而且是懒导入，所以其余部分在没有企业版 wheel 时也能导入和测试。

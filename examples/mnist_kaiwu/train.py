@@ -1,137 +1,119 @@
-"""Two-phase EP training driven directly by official Kaiwu solves."""
+"""Two-phase equilibrium-propagation training driven by the Kaiwu annealer.
+
+Each training sample needs two solver calls: a free phase at ``beta = 0`` and a
+nudged phase at ``beta > 0`` that warm-starts from the free solution. The
+parameter update is the difference between the two phase energies, divided by
+``beta``.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
-from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
 import torch
 
-from src.ising_ep.mapping import build_qubo, split_hidden_output
-from src.ising_ep.model import IsingEPModel
+from ising_ep.kaiwu_solver import KaiwuSolver
+from ising_ep.mapping import build_qubo
+from ising_ep.model import IsingEPModel
 
-from .artifacts import append_jsonl
-from .failures import PAIRING_VIOLATION, AlignmentError
 from .metrics import pair_dynamics
-from .solve import (
-    PairedSolverSettings,
-    SolveAudit,
-    build_kaiwu_problem,
-    solve_kaiwu_problem,
-)
 
 
 @dataclass(frozen=True)
 class PhasePair:
-    """Selected free and nudged states for one training sample."""
+    """Selected free and nudged spin states for one training sample.
 
-    h_free: torch.Tensor
-    o_free: torch.Tensor
-    h_nudged: torch.Tensor
-    o_nudged: torch.Tensor
-    free_audit: SolveAudit
-    nudged_audit: SolveAudit
-    free_solver_state: np.ndarray
-    nudged_solver_state: np.ndarray
+    Attributes:
+        free_states: One spin vector per layer from the free phase, output last.
+        nudged_states: One spin vector per layer from the nudged phase, output last.
+    """
+
+    free_states: tuple[torch.Tensor, ...]
+    nudged_states: tuple[torch.Tensor, ...]
 
 
-def _phase_energy(model: IsingEPModel, x: Any, target: Any, beta: float):
-    """Return an original-energy function for one decoded physical state."""
+def _solve_phase(
+    solver: KaiwuSolver,
+    qubo: torch.Tensor,
+    pair_seed: int,
+    init_solution: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run one annealing phase and take the candidate Kaiwu ranked first.
 
-    def energy_fn(physical: torch.Tensor) -> float:
-        hidden, output = split_hidden_output(physical, model.n_hidden, model.n_output)
-        value = model.free_energy(x, hidden, output, target, beta)
-        return float(value.detach().cpu().item())
+    Args:
+        solver: Annealer bound to the shared schedule.
+        qubo: QUBO matrix for this phase.
+        pair_seed: Seed shared by both phases of this sample.
+        init_solution: Warm start in solver order, or ``None`` for a cold start.
 
-    return energy_fn
+    Returns:
+        The selected physical spin vector and the solver row it came from. The
+        row is what the next phase passes back as ``init_solution``. Kaiwu
+        already ranks candidates and fixes the auxiliary spin at ``+1``, so the
+        first row is the selection and its leading entries are the physical
+        spins.
+    """
+    best = solver.solve(qubo, seed=pair_seed, init_solution=init_solution)[0]
+    return best[:-1], best
 
 
 def solve_phases(
     model: IsingEPModel,
+    solver: KaiwuSolver,
     x: Any,
     target: Any,
     beta: float,
     pair_seed: int,
-    settings: PairedSolverSettings,
-    *,
-    run_id: str,
-    sample_index: int,
 ) -> PhasePair:
-    """Solve paired free and warm-started nudged phases for one sample."""
-    beta_value = float(beta)
-    if not math.isfinite(beta_value) or beta_value <= 0:
-        raise AlignmentError(PAIRING_VIOLATION, "nudged phase requires a strictly positive beta")
-    settings.validate()
+    """Solve the paired free and nudged phases for one sample.
+
+    Both phases share ``pair_seed`` and the solver's annealing schedule, so the
+    only intended differences between them are the output field and the warm
+    start. The nudged phase is seeded with the free phase's complete solver row,
+    which is this project's stand-in for the reverse annealing used on quantum
+    hardware: it keeps the nudged state close to the free state so their
+    difference reflects the nudge rather than solver noise.
+
+    Args:
+        model: Network whose fields define both QUBO problems.
+        solver: Annealer bound to the shared schedule.
+        x: Clamped input of shape ``(n_in,)``.
+        target: Target spins of shape ``(n_output,)``.
+        beta: Strictly positive nudging coefficient.
+        pair_seed: Seed used by both phases of this sample.
+
+    Returns:
+        The selected free and nudged spin states, one vector per layer.
+
+    Raises:
+        ValueError: If ``beta`` is not strictly positive, which would make the
+            EP gradient undefined.
+    """
+    if not beta > 0:
+        raise ValueError("the nudged phase requires a strictly positive beta")
+
+    # Fields depend on parameters but must not enter the autograd graph: the
+    # solver is not differentiable, so gradients flow only through the energy
+    # recomputed on the returned spins.
     with torch.no_grad():
-        hidden_field, free_output_field = model.fields(x, target, 0.0)
-        _, nudged_output_field = model.fields(x, target, beta_value)
-        free_problem = build_kaiwu_problem(
-            build_qubo(model.V, hidden_field, free_output_field, 0.0)
-        )
-        nudged_problem = build_kaiwu_problem(
-            build_qubo(model.V, hidden_field, nudged_output_field, beta_value)
-        )
+        couplings = list(model.weights[1:])
+        free_qubo, _ = build_qubo(couplings, model.fields(x, target, 0.0), 0.0)
+        nudged_qubo, _ = build_qubo(couplings, model.fields(x, target, beta), beta)
 
-    free_candidate, free_audit = solve_kaiwu_problem(
-        free_problem,
-        phase="free",
-        pair_seed=pair_seed,
-        settings=settings,
-        energy_fn=_phase_energy(model, x, target, 0.0),
-        run_id=run_id,
-        sample_index=sample_index,
-    )
-    nudged_candidate, nudged_audit = solve_kaiwu_problem(
-        nudged_problem,
-        phase="nudged",
-        pair_seed=pair_seed,
-        settings=settings,
-        energy_fn=_phase_energy(model, x, target, beta_value),
-        initial_solver_state=free_candidate.solver_state,
-        run_id=run_id,
-        sample_index=sample_index,
-    )
-    if free_audit.optimizer_kwargs != nudged_audit.optimizer_kwargs:
-        raise AlignmentError(PAIRING_VIOLATION, "free/nudged optimizer kwargs drifted")
+    free_state, free_row = _solve_phase(solver, free_qubo, pair_seed, None)
+    nudged_state, _ = _solve_phase(solver, nudged_qubo, pair_seed, free_row)
 
-    h_free, o_free = split_hidden_output(
-        free_candidate.physical, model.n_hidden, model.n_output
-    )
-    h_nudged, o_nudged = split_hidden_output(
-        nudged_candidate.physical, model.n_hidden, model.n_output
-    )
-    return PhasePair(
-        h_free=h_free.detach(),
-        o_free=o_free.detach(),
-        h_nudged=h_nudged.detach(),
-        o_nudged=o_nudged.detach(),
-        free_audit=free_audit,
-        nudged_audit=nudged_audit,
-        free_solver_state=free_candidate.solver_state.copy(),
-        nudged_solver_state=nudged_candidate.solver_state.copy(),
-    )
-
-
-def _assert_parameters_unchanged(
-    model: IsingEPModel,
-    snapshot: dict[str, torch.Tensor],
-) -> None:
-    for name, before in snapshot.items():
-        current = model.state_dict()[name]
-        if not torch.equal(current.detach(), before):
-            raise AlignmentError(
-                PAIRING_VIOLATION,
-                "parameters changed during solver calls before batch update",
-                evidence={"parameter": name},
-            )
+    free_states = tuple(model.split_state(free_state))
+    nudged_states = tuple(model.split_state(nudged_state))
+    return PhasePair(free_states=free_states, nudged_states=nudged_states)
 
 
 def train_epoch(
     model: IsingEPModel,
     optimizer: torch.optim.Optimizer,
+    solver: KaiwuSolver,
     images: Any,
     labels: Any,
     order: Any,
@@ -139,126 +121,67 @@ def train_epoch(
     beta: float,
     batch_size: int,
     pair_seed_fn: Callable[[int], int],
-    settings: PairedSolverSettings,
-    run_id: str,
-    seed: int,
-    epoch: int,
-    ledger_path: str | Path,
 ) -> dict[str, float]:
-    """Train one epoch from a shared parameter snapshot per batch.
+    """Train for one epoch, stepping once per batch.
 
-    One parameter snapshot is used for the whole batch. After every sample in
-    that batch has been solved, one optimizer step is taken on the mean EP loss
-    ``(E_nudged - E_free) / beta``.
+    Every sample in a batch is solved against the *same* parameters, then a
+    single optimizer step is applied to the mean loss. Stepping mid-batch would
+    invalidate the phase pairs already collected, because their solver problems
+    were built from the pre-step parameters.
+
+    The loss is ``(E_nudged - E_free) / beta``. Differentiating it reproduces
+    the two-phase EP estimator on every layer: since the spins are constants,
+    the gradient of layer ``l`` is the free-minus-nudged correlation difference
+    ``(s_{l-1}^free (x) s_l^free - s_{l-1}^nudged (x) s_l^nudged) / beta``.
+    Autograd therefore replaces the hand-written gradient formula.
 
     Args:
-        model: EP network whose parameters receive the optimizer step.
-        optimizer: Torch optimizer, normally ``torch.optim.SGD``.
-        images: Training images aligned with ``labels``.
-        labels: Integer class labels.
-        order: Sample indices visited in this epoch.
-        beta: Positive nudging coefficient.
-        batch_size: Number of samples sharing one parameter snapshot.
-        pair_seed_fn: Maps a sample index to the paired free/nudged seed.
-        settings: Annealing settings shared by both phases.
-        run_id: Run identifier written into the ledger.
-        seed: Training seed written into the ledger.
-        epoch: Epoch index written into the ledger.
-        ledger_path: JSONL path for free and nudged solve audits.
+        model: Network whose parameters are updated.
+        optimizer: Torch optimizer, normally ``SGD``.
+        solver: Annealer bound to the shared schedule.
+        images: Training images indexed by ``order``.
+        labels: Integer class labels aligned with ``images``.
+        order: Sample indices visited this epoch.
+        beta: Strictly positive nudging coefficient.
+        batch_size: Samples sharing one parameter state.
+        pair_seed_fn: Maps a sample index to its paired free/nudged seed.
 
     Returns:
-        Batch-averaged flip statistics and the number of optimizer steps.
-
-    Raises:
-        AlignmentError: If the split, ``beta`` or an EP gradient is invalid.
+        Epoch-averaged flip statistics plus ``n_samples`` and ``batch_updates``.
     """
     indices = np.asarray(order, dtype=np.int64).reshape(-1)
-    if indices.size < 1:
-        raise AlignmentError(PAIRING_VIOLATION, "training split is empty")
-    if int(batch_size) < 1:
-        raise AlignmentError(PAIRING_VIOLATION, "batch_size must be positive")
-    beta_value = float(beta)
-    if not math.isfinite(beta_value) or beta_value <= 0:
-        raise AlignmentError(PAIRING_VIOLATION, "beta must be positive")
-
-    hidden_flip = 0.0
-    output_flip = 0.0
-    zero_update = 0.0
-    hidden_zero = 0.0
-    updates = 0
     images_array = np.asarray(images, dtype=np.float64)
     labels_array = np.asarray(labels, dtype=np.int64)
+    totals = {"hidden_flip": 0.0, "output_flip": 0.0, "zero_update": 0.0, "hidden_zero_update": 0.0}
+    updates = 0
 
-    start = 0
-    while start < indices.size:
-        batch = indices[start : start + int(batch_size)]
-        start += int(batch.size)
-        snapshot = model.parameter_snapshot()
-        pairs: list[PhasePair] = []
+    for start in range(0, indices.size, batch_size):
+        batch = indices[start : start + batch_size]
         losses: list[torch.Tensor] = []
-        xs: list[torch.Tensor] = []
         for sample_index in batch.tolist():
             x = torch.as_tensor(
-                images_array[int(sample_index)].reshape(-1),
+                images_array[sample_index].reshape(-1),
                 dtype=model.dtype,
                 device=model.device,
             )
-            target = model.target_spins([int(labels_array[int(sample_index)])])[0]
-            pair = solve_phases(
-                model,
-                x,
-                target,
-                beta_value,
-                int(pair_seed_fn(int(sample_index))),
-                settings,
-                run_id=run_id,
-                sample_index=int(sample_index),
-            )
-            pairs.append(pair)
-            xs.append(x)
+            target = model.target_spins(int(labels_array[sample_index]))
+            pair = solve_phases(model, solver, x, target, beta, pair_seed_fn(sample_index))
             losses.append(
                 (
-                    model.energy(x, pair.h_nudged, pair.o_nudged)
-                    - model.energy(x, pair.h_free, pair.o_free)
+                    model.energy(x, pair.nudged_states)
+                    - model.energy(x, pair.free_states)
                 )
-                / beta_value
+                / beta
             )
-            dynamics = pair_dynamics(
-                pair.h_free,
-                pair.o_free,
-                pair.h_nudged,
-                pair.o_nudged,
-            )
-            hidden_flip += dynamics["hidden_flip"]
-            output_flip += dynamics["output_flip"]
-            zero_update += dynamics["zero_update"]
-            hidden_zero += dynamics["hidden_zero_update"]
-            append_jsonl(
-                ledger_path,
-                {**pair.free_audit.to_json(), "seed": seed, "epoch": epoch, "split": "train"},
-            )
-            append_jsonl(
-                ledger_path,
-                {**pair.nudged_audit.to_json(), "seed": seed, "epoch": epoch, "split": "train"},
-            )
+            for key, value in pair_dynamics(pair.free_states, pair.nudged_states).items():
+                totals[key] += value
 
-        _assert_parameters_unchanged(model, snapshot)
-        loss = torch.stack(losses).mean()
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        for parameter in model.parameters():
-            if parameter.grad is not None and not torch.isfinite(parameter.grad).all():
-                raise AlignmentError(PAIRING_VIOLATION, "EP gradient is not finite")
+        torch.stack(losses).mean().backward()
         optimizer.step()
         updates += 1
 
-    inverse = 1.0 / float(indices.size)
-    return {
-        "hidden_flip": hidden_flip * inverse,
-        "output_flip": output_flip * inverse,
-        "zero_update": zero_update * inverse,
-        "hidden_zero_update": hidden_zero * inverse,
-        "skip_nudge": 0.0,
-        "n_samples": float(indices.size),
-        "batch_updates": float(updates),
-    }
+    stats = {key: value / indices.size for key, value in totals.items()}
+    stats["n_samples"] = float(indices.size)
+    stats["batch_updates"] = float(updates)
+    return stats

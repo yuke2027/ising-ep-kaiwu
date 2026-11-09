@@ -1,17 +1,38 @@
+# Virtual environments
 .venv/
+
+# Python bytecode
 __pycache__/
 *.pyc
+
+# Build and install artifacts
+*.egg-info/
+build/
+dist/
+
+# Test and tool caches
 .pytest_cache/
-data/
+
+# Experiment output and downloaded data
 runs/
-vendor/*.whl
-*.lic
-.env
-.DS_Store
-.devin/
+data/
 evidence/
 checkpoints/
 kaiwu-checkpoints/
-*.log
+
+# Credentials and licenses: never commit these
+.env
+*.lic
+
+# Kaiwu wheels are licensed and stay local
+vendor/*.whl
+
+# Local workspace material that is not part of the package
 delivery/
 upstream/
+archive/ising-ep-kaiwu-delivery/
+archive/runs-alignment-h64-e5/
+.devin/
+
+*.log
+.DS_Store
