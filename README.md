@@ -8,10 +8,14 @@ over **discrete Ising spins** and delegates each relaxation to the
 [Kaiwu](https://platform.qboson.com/) SDK's simulated annealer, so the
 "relaxation" step is a real combinatorial solve rather than a gradient descent.
 
-The reference experiment classifies MNIST/100 with a 784-64-40 network. A
-three-seed run reaches **38.3% ± 16.8%** test accuracy; the archived artifacts are
-in [`results/primary/`](results/primary) and the numbers are reproduced in
-[Results](#results) below.
+The main experiment classifies sklearn Digits with a 64-64-40 network. The
+default configuration reaches **10.0% ± 0.2%** test accuracy over three seeds
+(tie rate 100%); halving the output-layer learning rate, chosen on a validation
+split, reaches **49.9% ± 1.3%**. A backpropagation baseline on the same split
+reaches 93.52% ± 0.65%. The archive is in
+[`results/digits/`](results/digits/tuned/README.md) and the numbers are
+reproduced in [Results](#results) below. MNIST/100 remains as a second
+experiment in [`results/primary/`](results/primary).
 
 ---
 
@@ -151,8 +155,9 @@ examples/mnist_kaiwu/    The MNIST/100 experiment
 examples/digits_kaiwu/   sklearn Digits experiment and a backprop baseline
 tests/unit/              No SDK or credentials needed
 tests/integration/       Skipped automatically without the licensed SDK
-results/primary/         Archived three-seed run (read-only evidence)
-results/tuned/           Archived tuned runs
+results/digits/          Digits main experiment: reference and tuned runs
+results/primary/         MNIST/100 three-seed run (read-only evidence)
+results/tuned/           MNIST/100 tuned runs
 docs/                    Kaiwu SDK hands-on notes
 tools/ep_p0/             Upstream-plugin setup helper, not part of the package
 records/ep-p0/           Upstream-plugin setup records
@@ -238,10 +243,11 @@ That last command prints the installed version. On 1.4.x `kaiwu.__version__`
 reports a different, stale value; the distribution version is the authoritative
 one.
 
-For hosted backends, copy `.env.example` to `.env` and fill in `KAIWU_USER_ID`
-and `KAIWU_SDK_CODE`. Lookup order: environment variables first, then `.env` in
-the project directory, then `.env` in its parent (the workspace root). The classical annealer used by this experiment runs without
-them. Never commit `.env` or a license file.
+The 1.4 line asks for credentials before the first anneal: copy `.env.example`
+to `.env` and fill in `KAIWU_USER_ID` and `KAIWU_SDK_CODE`. Version 1.3.1 does
+not. Lookup order: environment variables first, then `.env` in the project
+directory, then `.env` in its parent (the workspace root). Never commit `.env`
+or a license file.
 
 ### MNIST data
 
@@ -253,7 +259,24 @@ Downloading is opt-in so a training run never reaches the network unexpectedly.
 
 ## Running
 
-Smoke run (one seed, small network, minutes):
+Digits is the main experiment. The command that produced
+[`results/digits/tuned/lrout05/`](results/digits/tuned/lrout05):
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.digits_kaiwu.experiment `
+  --output runs/digits-lrout05 --seeds 0,1,2 --epochs 5 `
+  --validation-fraction 0.2 --eval-every-epoch `
+  --lr-weights 0.01,0.005 --lr-biases 0.01,0.005
+```
+
+The backpropagation baseline on the same split does not need Kaiwu:
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.digits_kaiwu.backprop `
+  --output runs/digits-backprop --seeds 0,1,2
+```
+
+MNIST/100 is the second experiment. Smoke run (one seed, small network, minutes):
 
 ```powershell
 .\.venv\Scripts\python.exe -m examples.mnist_kaiwu.experiment `
@@ -278,8 +301,9 @@ values each):
   --lr-weights 0.01,0.01,0.02 --lr-biases 0.005,0.005,0.01
 ```
 
-No accuracy is recorded for deeper networks in this repository; only the
-784-64-40 run is archived.
+No accuracy is recorded for deeper networks on MNIST. On Digits,
+`--hidden-sizes 128` and `128,64` did not beat the reference during screening;
+see [`results/digits/tuned/`](results/digits/tuned/README.md).
 
 `--help` lists every option, including the annealing schedule
 (`--initial-temperature`, `--alpha`, `--cutoff-temperature`,
@@ -312,6 +336,30 @@ paired anneal seed, and the evaluation seeds.
 ---
 
 ## Results
+
+### Digits
+
+Archived in [`results/digits/`](results/digits/tuned/README.md). Network
+64-64-40, 5 epochs, batch 10, seeds 0/1/2, split seed 0 (1,149 train / 288
+validation / 360 test). Annealing matches MNIST: `T₀ = 1.25`, `α = 0.95`,
+cutoff `0.001`, 10 iterations per temperature, 8 candidates per solve.
+Hyperparameters were chosen on the validation split, and each seed reads the
+test split once.
+
+| Configuration | Test accuracy | Tie rate |
+|---|---|---|
+| Default (`lr = 0.01`, `β = 1`) | 10.0% ± 0.2% | 100% |
+| Output learning rate ×0.5 | **49.9% ± 1.3%** | 6.6% |
+| Plus `β = 2` | 49.3% ± 0.6% | 5.0% |
+| Backprop 64-64-10 (`lr = 0.05`) | 93.52% ± 0.65% | |
+
+The standard deviation is the population standard deviation of the three seeds.
+The default configuration ties on every test image. The two tuned
+configurations differ by 0.6 points, less than the spread across seeds. The
+backprop network uses the same split, epoch count and batch size, with its own
+default learning rate.
+
+### MNIST/100
 
 Archived in [`results/primary/`](results/primary). Configuration: 784-64-40,
 5 epochs, batch 10, `lr = 0.01`, `β = 1.0`, seeds 0/1/2; annealing
@@ -378,9 +426,13 @@ enabled with `accept-no-param-doc = false`, so a missing `Args`, `Returns` or
   Deeper stacks are supported but not benchmarked here.
 - **Solver.** Kaiwu's classical simulated annealer with a warm start. The
   literature uses D-Wave reverse annealing.
-- **Data.** MNIST/100: 1,000 training images and 100 test images.
-- **Accuracy.** 38.3% ± 16.8% over three seeds. Same-split baselines: software
-  annealer 0.15, trivial gate 0.10, backprop MLP 0.91.
+- **Data.** The main experiment is sklearn Digits: 1,149 training images, 288
+  validation images and 360 test images. MNIST/100 is still here: 1,000
+  training images and 100 test images.
+- **Accuracy.** On Digits, tuned EP reaches **49.9% ± 1.3%** and the same-split
+  backprop baseline reaches 93.52% ± 0.65%; the default EP configuration is
+  10.0% ± 0.2%. The MNIST/100 reference run is **38.3% ± 16.8%**. Same-split
+  baselines there: software annealer 0.15, trivial gate 0.10, backprop MLP 0.91.
 
 ## Sources
 

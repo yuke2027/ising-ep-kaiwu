@@ -4,7 +4,7 @@
 
 均衡传播（equilibrium propagation，EP）只用网络的两次弛豫来训练基于能量的模型，不需要反向传播。本项目在**离散 Ising 自旋**上实现 EP，并把每一次弛豫交给 [Kaiwu](https://platform.qboson.com/) SDK 的模拟退火器，因此“弛豫”是一次真正的组合优化求解，而不是梯度下降。
 
-参考实验用 784-64-40 网络对 MNIST/100 做分类。三次随机种子的测试准确率为 **38.3% ± 16.8%**。归档产物在 [`results/primary/`](results/primary/README.zh-CN.md)，数字复述于下方[结果](#结果)。
+主实验用 64-64-40 网络对 sklearn Digits 做分类。默认配置三次种子的测试准确率是 **10.0% ± 0.2%**（平局率 100%）；在验证集上把输出层学习率减半之后是 **49.9% ± 1.3%**。同一划分上的反向传播对照是 93.52% ± 0.65%。归档在 [`results/digits/`](results/digits/tuned/README.zh-CN.md)，数字复述于下方[结果](#结果)。MNIST/100 仍作为第二个实验保留，见 [`results/primary/`](results/primary/README.zh-CN.md)。
 
 ---
 
@@ -110,8 +110,9 @@ examples/mnist_kaiwu/    MNIST/100 实验
 examples/digits_kaiwu/   sklearn Digits 实验与反向传播对照
 tests/unit/              不需要 SDK，也不需要凭证
 tests/integration/       没有授权 SDK 时自动跳过
-results/primary/         归档的三次种子运行（只读证据）
-results/tuned/           归档的调参运行
+results/digits/          Digits 主实验：参考运行与调参运行
+results/primary/         MNIST/100 的三次种子运行（只读证据）
+results/tuned/           MNIST/100 的调参运行
 docs/                    Kaiwu SDK 实操手册
 tools/ep_p0/             上游插件环境准备工具，不属于本包
 records/ep-p0/           上游插件环境准备记录
@@ -174,7 +175,7 @@ Kaiwu 的 wheel 不在 PyPI 上。从量子云平台下载对应操作系统和�
 
 最后一条命令会打印已安装的版本。1.4.x 上 `kaiwu.__version__` 报的是另一个过期值，以发行版版本为准。
 
-托管后端需要把 `.env.example` 复制为 `.env`，填入 `KAIWU_USER_ID` 和 `KAIWU_SDK_CODE`。查找顺序：先看环境变量，再看项目目录下的 `.env`，最后看上一级目录（工作区根目录）的 `.env`。本实验使用的经典退火器不需要它们。不要提交 `.env` 或许可证文件。
+1.4 系列在第一次退火前就需要凭证：把 `.env.example` 复制为 `.env`，填入 `KAIWU_USER_ID` 和 `KAIWU_SDK_CODE`。1.3.1 不需要。查找顺序：先看环境变量，再看项目目录下的 `.env`，最后看上一级目录（工作区根目录）的 `.env`。不要提交 `.env` 或许可证文件。
 
 ### MNIST 数据
 
@@ -184,7 +185,23 @@ Kaiwu 的 wheel 不在 PyPI 上。从量子云平台下载对应操作系统和�
 
 ## 运行
 
-冒烟运行（一个种子，小网络，几分钟）：
+Digits 主实验。产生 [`results/digits/tuned/lrout05/`](results/digits/tuned/lrout05) 的命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.digits_kaiwu.experiment `
+  --output runs/digits-lrout05 --seeds 0,1,2 --epochs 5 `
+  --validation-fraction 0.2 --eval-every-epoch `
+  --lr-weights 0.01,0.005 --lr-biases 0.01,0.005
+```
+
+同一划分的反向传播对照不需要 Kaiwu：
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.digits_kaiwu.backprop `
+  --output runs/digits-backprop --seeds 0,1,2
+```
+
+MNIST/100 是第二个实验。冒烟运行（一个种子，小网络，几分钟）：
 
 ```powershell
 .\.venv\Scripts\python.exe -m examples.mnist_kaiwu.experiment `
@@ -208,7 +225,7 @@ Kaiwu 的 wheel 不在 PyPI 上。从量子云平台下载对应操作系统和�
   --lr-weights 0.01,0.01,0.02 --lr-biases 0.005,0.005,0.01
 ```
 
-本仓库没有记录更深网络的准确率，只归档了 784-64-40 这一次运行。
+本仓库没有记录更深网络在 MNIST 上的准确率。Digits 上 `--hidden-sizes 128` 和 `128,64` 在筛选阶段没有超过参考，见 [`results/digits/tuned/`](results/digits/tuned/README.zh-CN.md)。
 
 `--help` 列出全部选项，包括退火日程（`--initial-temperature`、`--alpha`、`--cutoff-temperature`、`--iterations-per-t`、`--candidate-count`）。
 
@@ -234,6 +251,21 @@ Kaiwu 的 wheel 不在 PyPI 上。从量子云平台下载对应操作系统和�
 ---
 
 ## 结果
+
+### Digits
+
+归档于 [`results/digits/`](results/digits/tuned/README.zh-CN.md)。网络 64-64-40，5 个 epoch，批大小 10，种子 0/1/2，划分种子 0（训练 1149 / 验证 288 / 测试 360）。退火与 MNIST 相同：`T₀ = 1.25`，`α = 0.95`，截止温度 `0.001`，每个温度 10 次迭代，每次求解 8 个候选。超参数只在验证集上选，测试集每个种子只读一次。
+
+| 配置 | 测试准确率 | 平局率 |
+|------|------------|--------|
+| 默认（`lr = 0.01`，`β = 1`） | 10.0% ± 0.2% | 100% |
+| 输出层学习率 ×0.5 | **49.9% ± 1.3%** | 6.6% |
+| 再加 `β = 2` | 49.3% ± 0.6% | 5.0% |
+| 反向传播 64-64-10（`lr = 0.05`） | 93.52% ± 0.65% | |
+
+标准差是三个种子的总体标准差。默认配置在测试集上每张图都是平局。两个调参配置之间差 0.6 个点，小于种子之间的波动。反向传播用同一划分和同样的 epoch 数、批大小，学习率是它自己的默认值。
+
+### MNIST/100
 
 归档于 [`results/primary/`](results/primary/README.zh-CN.md)。配置：784-64-40，5 个 epoch，批大小 10，`lr = 0.01`，`β = 1.0`，种子 0/1/2；退火 `T₀ = 1.25`，`α = 0.95`，截止温度 `0.001`，每个温度 10 次迭代，每次求解 8 个候选。
 
@@ -282,8 +314,8 @@ Kaiwu 的 wheel 不在 PyPI 上。从量子云平台下载对应操作系统和�
 
 - **网络。** 归档运行用 64 个隐层自旋，文献中是 120。更深的堆叠已支持，但这里没有做基准测试。
 - **求解器。** Kaiwu 经典模拟退火，微扰相热启动。文献使用 D-Wave 反向退火。
-- **数据。** MNIST/100：1,000 张训练图像，100 张测试图像。
-- **准确率。** 三次种子 **38.3% ± 16.8%**。同一划分上的基线：软件退火器 0.15，平凡门 0.10，反向传播 MLP 0.91。
+- **数据。** 主实验是 sklearn Digits：1149 张训练、288 张验证、360 张测试。MNIST/100 仍在：1,000 张训练图像，100 张测试图像。
+- **准确率。** Digits 上，调参后的 EP 是 **49.9% ± 1.3%**，同一划分的反向传播是 93.52% ± 0.65%，默认 EP 配置是 10.0% ± 0.2%。MNIST/100 的参考运行是 **38.3% ± 16.8%**；同一划分上的基线：软件退火器 0.15，平凡门 0.10，反向传播 MLP 0.91。
 
 ## 文献
 
