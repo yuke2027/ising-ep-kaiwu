@@ -8,34 +8,67 @@
   },
   "created": "2026-09-29",
   "credential_scans": [],
-  "dependency_declarations": [],
+  "dependency_declarations": [
+    {
+      "id": "D-001",
+      "line": 3,
+      "path": "upstream/kaiwu-pytorch-plugin/requirements/requirements.txt",
+      "updated": false,
+      "value": "kaiwu>=1.3.1,<=1.4.3"
+    },
+    {
+      "id": "D-002",
+      "line": 79,
+      "path": "upstream/kaiwu-pytorch-plugin/README.md",
+      "updated": false,
+      "value": "kaiwu == 1.3.1"
+    },
+    {
+      "id": "D-003",
+      "line": 82,
+      "path": "upstream/kaiwu-pytorch-plugin/README_ZH.md",
+      "updated": false,
+      "value": "kaiwu == 1.3.1"
+    }
+  ],
   "gates": [
     {
       "blocker": null,
-      "evidence": [],
+      "evidence": [
+        "upstream/kaiwu-pytorch-plugin",
+        "work_branch=feat/ep-energy-qubo",
+        "head=f047bce7b1077449967bbe9e9fab5741542b48d4",
+        "tracks origin/main; deps/kaiwu-1.4.1 was never created"
+      ],
       "id": "G1",
       "kind": "hard",
       "owner": "automation",
-      "status": "unmet",
-      "updated": "2026-09-29"
+      "status": "met",
+      "updated": "2026-11-14"
     },
     {
-      "blocker": null,
-      "evidence": [],
+      "blocker": "upstream/.venv has kaiwu 1.3.1; kaiwu.core is missing qubo_matrix_to_qubo_model, qubo_model_to_ising_model and PrecisionReducer",
+      "evidence": [
+        "records/ep-p0/environment.json",
+        "python=3.10.11",
+        "kaiwu=1.3.1"
+      ],
       "id": "G2",
       "kind": "hard",
       "owner": "automation",
       "status": "unmet",
-      "updated": "2026-09-29"
+      "updated": "2026-11-14"
     },
     {
-      "blocker": null,
-      "evidence": [],
+      "blocker": "no commit on the work branch sets requirements to kaiwu==1.4.1; the uncommitted file says kaiwu>=1.3.1,<=1.4.3",
+      "evidence": [
+        "upstream/kaiwu-pytorch-plugin/requirements/requirements.txt"
+      ],
       "id": "G3",
       "kind": "hard",
       "owner": "automation",
       "status": "unmet",
-      "updated": "2026-09-29"
+      "updated": "2026-11-14"
     },
     {
       "blocker": null,
@@ -120,13 +153,38 @@
     }
   ],
   "handover": {
-    "activate_command": null,
-    "api_checks": [],
-    "clone_path": null,
-    "head_sha": null,
+    "activate_command": "upstream\\\\.venv\\\\Scripts\\\\python.exe",
+    "api_checks": [
+      {
+        "name": "kaiwu.core.qubo_matrix_to_qubo_model",
+        "ok": false
+      },
+      {
+        "name": "kaiwu.core.qubo_model_to_ising_model",
+        "ok": false
+      },
+      {
+        "name": "kaiwu.core.get_sol_dict",
+        "ok": true
+      },
+      {
+        "name": "kaiwu.classical.SimulatedAnnealingOptimizer",
+        "ok": true
+      },
+      {
+        "name": "kaiwu.cim.CIMOptimizer",
+        "ok": true
+      },
+      {
+        "name": "kaiwu.preprocess.PrecisionReducer",
+        "ok": false
+      }
+    ],
+    "clone_path": "upstream/kaiwu-pytorch-plugin",
+    "head_sha": "f047bce7b1077449967bbe9e9fab5741542b48d4",
     "lint_commands": [],
-    "venv_path": null,
-    "work_branch": null
+    "venv_path": "upstream/.venv",
+    "work_branch": "feat/ep-energy-qubo"
   },
   "identity_checks": [],
   "ignore_checks": [],
@@ -188,14 +246,58 @@
   },
   "pushes": [],
   "repo": {
-    "base_commit": null,
-    "clone_date": null,
-    "clone_path": null,
-    "fork_main_head": null,
-    "fork_url": null,
-    "structure_checks": [],
-    "work_branch": null
+    "base_commit": "f047bce7b1077449967bbe9e9fab5741542b48d4",
+    "clone_date": "2026-10-13",
+    "clone_path": "upstream/kaiwu-pytorch-plugin",
+    "fork_main_head": "f047bce7b1077449967bbe9e9fab5741542b48d4",
+    "fork_url": "https://github.com/Hanyuan9766/kaiwu-pytorch-plugin.git",
+    "structure_checks": [
+      {
+        "detail": "",
+        "item": "源码目录",
+        "ok": true,
+        "path": "src/kaiwu/torch_plugin/"
+      },
+      {
+        "detail": "__version__ = '0.3.0'（期望 '0.3.0'）",
+        "item": "__version__",
+        "ok": true,
+        "path": "src/kaiwu/torch_plugin/__init__.py"
+      },
+      {
+        "detail": "子目录：bm_generation, dbn_digits, feature_selection, qdiffusion, qvae_cell, qvae_mnist, rbm_digits",
+        "item": "示例目录",
+        "ok": true,
+        "path": "example/"
+      },
+      {
+        "detail": "test_bm.py, test_energy_model.py, test_feature_selection_wrapper.py, test_gbrbm.py, test_qdiffusion_dummy.py, test_qdiffusion_import.py, test_qvae.py, test_rbm.py, test_usage_stats.py",
+        "item": "测试文件",
+        "ok": true,
+        "path": "tests/test_*.py"
+      },
+      {
+        "detail": "",
+        "item": "依赖文件",
+        "ok": true,
+        "path": "requirements/requirements.txt"
+      },
+      {
+        "detail": "",
+        "item": "Apache-2.0 许可",
+        "ok": true,
+        "path": "LICENSE"
+      }
+    ],
+    "work_branch": "feat/ep-energy-qubo"
   },
   "schema": "ep-p0/status@1",
-  "waits": []
+  "waits": [
+    {
+      "channel": "chat",
+      "item": "a work-branch commit that sets requirements/requirements.txt to kaiwu==1.4.1",
+      "party": "user",
+      "requested_date": "2026-11-14"
+    }
+  ]
 }
