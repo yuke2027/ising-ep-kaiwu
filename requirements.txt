@@ -5,8 +5,8 @@
 # for example:
 #   .venv\Scripts\python.exe -m pip install vendor\kaiwu-1.4.1-cp310-none-win_amd64.whl
 numpy==2.2.6
-scikit-learn==1.6.1
+scikit-learn==1.7.2
 torch==2.7.0
 pytest==8.3.5
-pylint==3.3.2
+pylint==3.3.7
 pydocstyle[toml]==6.3.0
