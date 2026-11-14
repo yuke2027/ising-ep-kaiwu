@@ -108,11 +108,12 @@ adjacent layers only:
 E = -Σ_l s_{l-1}·W_l·s_l - Σ_l b_l·s_l        (s_0 = x, the last s is the output)
 ```
 
-`mapping.build_qubo(couplings, fields, β)` folds this into one block-tridiagonal
+`IsingEPModel.qubo(x, target, β)` folds this into one block-tridiagonal
 `Q`. Each coupling adds `-4·W` to the block between its two layers and
 `2·W.sum(axis)` to each diagonal block; each field adds `-2·H`. The single-hidden
-case above is `couplings = [V]`, `fields = [H_h, H_o]`. Learning rates are set
-per layer (`--lr-weights`, `--lr-biases`, one value per connection), with
+case above is the hidden-to-output coupling `V` and the fields `H_h`, `H_o`.
+Learning rates are set per layer (`--lr-weights`, `--lr-biases`, one value per
+connection), with
 optional `--weight-decay` on weights only and `--init-gains` to scale the initial
 uniform range of each layer.
 
@@ -142,8 +143,7 @@ and negative-tail flip are done locally with the same rule.
 
 ```
 src/ising_ep/            Reusable core, no experiment specifics
-  model.py               Layer stack, parameters and the EP energy (torch.nn.Module)
-  mapping.py             EP <-> QUBO mapping, block-tridiagonal for any depth
+  model.py               Layer stack, parameters, EP energy and QUBO (torch.nn.Module)
   kaiwu_solver.py        The only module that imports kaiwu
 examples/mnist_kaiwu/    The MNIST/100 experiment
   data.py                Deterministic MNIST/100 subset

@@ -25,9 +25,9 @@ kaiwu = pytest.importorskip(
 
 # pylint: disable=wrong-import-position
 from ising_ep.kaiwu_solver import AUXILIARY_VARIABLE, AnnealSettings, KaiwuSolver, _sdk_api
-from ising_ep.mapping import build_qubo, qubo_energy
+from ising_ep.model import IsingEPModel
 
-from tests.conftest import iter_physical_states
+from tests.conftest import iter_physical_states, qubo_score
 
 pytestmark = pytest.mark.integration
 
@@ -43,14 +43,13 @@ _SETTINGS = AnnealSettings(
 @pytest.fixture(name="qubo")
 def fixture_qubo() -> tuple[torch.Tensor, float]:
     """Return a 1-hidden/1-output EP QUBO, i.e. two physical spins."""
-    return build_qubo(
-        [torch.tensor([[0.3]], dtype=torch.float64)],
-        [
-            torch.tensor([0.2], dtype=torch.float64),
-            torch.tensor([-0.3], dtype=torch.float64),
-        ],
-        0.25,
-    )
+    model = IsingEPModel(n_in=1, hidden_sizes=1, n_classes=1, spins_per_class=1, seed=0)
+    with torch.no_grad():
+        model.weights[0].zero_()
+        model.weights[1].copy_(torch.tensor([[0.3]], dtype=torch.float64))
+        model.biases[0].copy_(torch.tensor([0.2], dtype=torch.float64))
+        model.biases[1].copy_(torch.tensor([-0.3], dtype=torch.float64))
+    return model.qubo(torch.zeros(1), torch.zeros(1), 0.25)
 
 
 @pytest.fixture(name="licensed_annealer", scope="module")
@@ -136,7 +135,7 @@ def test_best_row_is_gauge_fixed_and_minimizes_the_qubo(qubo: tuple[torch.Tensor
     assert set(np.unique(candidates[:, -1]).tolist()) == {1.0}
 
     def energy_of(spins: np.ndarray) -> float:
-        return qubo_energy(matrix, constant, spins)
+        return qubo_score(matrix, constant, spins)
 
     chosen = candidates[0, :-1]
     brute_force = min(energy_of(state) for state in iter_physical_states(2))

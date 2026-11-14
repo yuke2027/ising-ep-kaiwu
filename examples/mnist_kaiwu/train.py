@@ -15,7 +15,6 @@ import numpy as np
 import torch
 
 from ising_ep.kaiwu_solver import KaiwuSolver
-from ising_ep.mapping import build_qubo
 from ising_ep.model import IsingEPModel
 
 from .metrics import pair_dynamics
@@ -98,9 +97,8 @@ def solve_phases(
     # solver is not differentiable, so gradients flow only through the energy
     # recomputed on the returned spins.
     with torch.no_grad():
-        couplings = list(model.weights[1:])
-        free_qubo, _ = build_qubo(couplings, model.fields(x, target, 0.0), 0.0)
-        nudged_qubo, _ = build_qubo(couplings, model.fields(x, target, beta), beta)
+        free_qubo, _ = model.qubo(x, target, 0.0)
+        nudged_qubo, _ = model.qubo(x, target, beta)
 
     free_state, free_row = _solve_phase(solver, free_qubo, pair_seed, None)
     nudged_state, _ = _solve_phase(solver, nudged_qubo, pair_seed, free_row)

@@ -215,6 +215,10 @@ class KaiwuSolver:
     ) -> np.ndarray:
         """Anneal once, retrying when Kaiwu returns an empty pool.
 
+        A warm start sometimes comes back with no candidates. The extra
+        attempts flip that start and then drop it. They repeat the same solve;
+        they are not a log of failed runs.
+
         Args:
             kw: Imported ``kaiwu`` module.
             ising_matrix: Ising coupling matrix, including the auxiliary spin.

@@ -3,8 +3,8 @@
 Clamped inputs feed a stack of hidden spin layers and one output layer. The
 widths come from ``hidden_sizes`` plus ``n_classes * spins_per_class`` output
 spins. Learnable parameters are one weight matrix and one bias per connection,
-stored in ``weights`` and ``biases``. :func:`ising_ep.mapping.build_qubo` turns
-the local fields of :meth:`IsingEPModel.fields` into the QUBO Kaiwu consumes.
+stored in ``weights`` and ``biases``. :meth:`IsingEPModel.qubo` turns the same
+network into the upper-triangular QUBO Kaiwu consumes.
 """
 
 from __future__ import annotations
@@ -64,6 +64,83 @@ def _init_gains(gains: Sequence[float] | None, n_connections: int) -> tuple[floa
     if any(gain <= 0.0 for gain in values):
         raise ValueError(f"init_gains must be strictly positive, got {values}")
     return values
+
+
+def _build_qubo(
+    couplings: Sequence[Any],
+    fields: Sequence[Any],
+    beta: float,
+) -> tuple[torch.Tensor, float]:
+    """Rewrite a stacked ``F = E + beta * C`` as an upper-triangular QUBO.
+
+    With spin layers ``s_0, ..., s_{K-1}`` (the last one is the output), the
+    local fields ``H_l`` and the spin-spin couplings ``W_l`` between layer
+    ``l - 1`` and ``l``, the nudged EP objective collapses to::
+
+        F = -sum_{l>=1} s_{l-1} W_l s_l - sum_l H_l . s_l + beta * n_output
+
+    The clamped input never appears here: it is already inside ``H_0``.
+    Substituting ``s = 2q - 1`` and using ``q**2 == q`` for binary variables
+    moves all linear terms onto the diagonal of ``Q``. A single hidden layer is
+    ``couplings = [V]`` and ``fields = [H_h, H_o]``.
+
+    Args:
+        couplings: One weight matrix per adjacent pair of spin layers, of shape
+            ``(width_l, width_{l+1})``. Empty for a single spin layer.
+        fields: Local field of every spin layer, output last. The nudge
+            ``beta * target`` is already part of the last field.
+        beta: Nudging coefficient. It enters ``Q`` only through the last field;
+            here it contributes the ``beta * n_output`` offset.
+
+    Returns:
+        A tuple ``(Q, constant)`` where ``Q`` is an upper-triangular
+        ``float64`` matrix and ``constant`` is the scalar offset such that
+        ``q @ Q @ q + constant == F`` for ``q = (s + 1) / 2``.
+
+    Raises:
+        ValueError: If ``fields`` is empty or a coupling does not match the
+            widths of the two layers it joins.
+    """
+    local = [
+        torch.as_tensor(field).detach().to(dtype=torch.float64).reshape(-1) for field in fields
+    ]
+    if not local:
+        raise ValueError("the QUBO needs at least one local field")
+    if len(couplings) != len(local) - 1:
+        raise ValueError(
+            f"expected {len(local) - 1} couplings for {len(local)} fields, "
+            f"got {len(couplings)}"
+        )
+
+    widths = [int(field.shape[0]) for field in local]
+    starts = [sum(widths[:index]) for index in range(len(widths))]
+    matrix = torch.zeros((sum(widths), sum(widths)), dtype=torch.float64)
+    offset = torch.zeros((), dtype=torch.float64) + float(beta) * widths[-1]
+
+    for index, coupling in enumerate(couplings):
+        weight = torch.as_tensor(coupling).detach().to(dtype=torch.float64)
+        left, right = starts[index], starts[index + 1]
+        left_width, right_width = widths[index], widths[index + 1]
+        if tuple(weight.shape) != (left_width, right_width):
+            raise ValueError(
+                f"coupling {index} must have shape {(left_width, right_width)}, "
+                f"got {tuple(weight.shape)}"
+            )
+        # Diagonals carry the linear coefficients because q**2 == q.
+        matrix[left : left + left_width, left : left + left_width].diagonal().add_(
+            2.0 * weight.sum(dim=1)
+        )
+        matrix[right : right + right_width, right : right + right_width].diagonal().add_(
+            2.0 * weight.sum(dim=0)
+        )
+        # Upper-triangular cross block: (2q_j - 1)(2q_k - 1) expands to 4 q_j q_k.
+        matrix[left : left + left_width, right : right + right_width] = -4.0 * weight
+        offset = offset - weight.sum()
+
+    for start, width, field in zip(starts, widths, local):
+        matrix[start : start + width, start : start + width].diagonal().add_(-2.0 * field)
+        offset = offset + field.sum()
+    return matrix, float(offset.item())
 
 
 # `forward` is intentionally not implemented: this module is an energy function
@@ -314,6 +391,29 @@ class IsingEPModel(nn.Module):  # pylint: disable=abstract-method
                 field = field + float(beta) * self._vector(target)
             local.append(field)
         return local
+
+    def qubo(self, x: Any, target: Any, beta: float) -> tuple[torch.Tensor, float]:
+        """Rewrite ``F = E + beta * C`` for one sample as an upper-triangular QUBO.
+
+        The clamped input and the nudge are folded into the local fields first,
+        so the matrix only contains the free spin layers. The returned tensors
+        are detached: the solver is not differentiable, and gradients flow
+        through :meth:`energy` on the spins it returns.
+
+        Args:
+            x: Clamped input of shape ``(n_in,)``.
+            target: Target spins of shape ``(n_output,)``.
+            beta: Non-negative nudging coefficient. ``0`` gives the free phase.
+
+        Returns:
+            A tuple ``(Q, constant)`` where ``Q`` is an upper-triangular
+            ``float64`` matrix and ``constant`` is the scalar offset such that
+            ``q @ Q @ q + constant`` equals ``F`` for ``q = (s + 1) / 2``.
+        """
+        with torch.no_grad():
+            fields = self.fields(x, target, beta)
+            couplings = [weight.detach() for weight in self.weights[1:]]
+        return _build_qubo(couplings, fields, beta)
 
     def split_state(self, state: Any) -> list[torch.Tensor]:
         """Split a physical spin vector into one block per spin layer.

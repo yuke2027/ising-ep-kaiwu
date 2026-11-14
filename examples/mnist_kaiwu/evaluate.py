@@ -13,7 +13,6 @@ import numpy as np
 import torch
 
 from ising_ep.kaiwu_solver import KaiwuSolver
-from ising_ep.mapping import build_qubo
 from ising_ep.model import IsingEPModel
 
 from .metrics import classification_metrics
@@ -55,9 +54,7 @@ def evaluate_free_only(
     for index, (image, label) in enumerate(zip(images_array, labels_array, strict=True)):
         x = torch.as_tensor(image.reshape(-1), dtype=model.dtype, device=model.device)
         with torch.no_grad():
-            qubo, _ = build_qubo(
-                list(model.weights[1:]), model.fields(x, unused_target, 0.0), 0.0
-            )
+            qubo, _ = model.qubo(x, unused_target, 0.0)
 
         best = solver.solve(qubo, seed=int(eval_seed) + index)[0]
         states = model.split_state(best[:-1])

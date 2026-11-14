@@ -87,6 +87,26 @@ def iter_physical_states(n: int) -> Iterator[torch.Tensor]:
         yield torch.tensor(bits, dtype=torch.float64)
 
 
+def qubo_score(matrix: Any, constant: float, spins: Any) -> float:
+    """Score physical spins under an upper-triangular QUBO.
+
+    This stays in the tests. The package exposes the energy through
+    :meth:`ising_ep.model.IsingEPModel.energy` and the matrix through
+    :meth:`ising_ep.model.IsingEPModel.qubo`.
+
+    Args:
+        matrix: Upper-triangular QUBO matrix.
+        constant: Scalar offset returned with the matrix.
+        spins: Physical spins in ``{-1, +1}``.
+
+    Returns:
+        ``q @ Q @ q + constant`` with ``q = (spins + 1) / 2``.
+    """
+    bits = (to_numpy(spins).reshape(-1) + 1.0) * 0.5
+    values = to_numpy(matrix)
+    return float(bits @ values @ bits + float(constant))
+
+
 def to_numpy(value: Any) -> np.ndarray:
     """Convert a NumPy array or Torch tensor to a detached NumPy array.
 

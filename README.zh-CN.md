@@ -81,7 +81,7 @@ constant      = β·n_output + H_h.sum() + H_o.sum() - V.sum()
 E = -Σ_l s_{l-1}·W_l·s_l - Σ_l b_l·s_l        （s_0 = x，最后一个 s 是输出）
 ```
 
-`mapping.build_qubo(couplings, fields, β)` 把它折成一个块三对角的 `Q`。每个耦合在两层之间的块上加 `-4·W`，在两个对角块上各加 `2·W.sum(axis)`；每个场加 `-2·H`。上面单隐层的情形就是 `couplings = [V]`、`fields = [H_h, H_o]`。学习率按层设置（`--lr-weights`、`--lr-biases`，每个连接一个值），另有只作用于权重的 `--weight-decay`，以及缩放各层初始均匀分布范围的 `--init-gains`。
+`IsingEPModel.qubo(x, target, β)` 把它折成一个块三对角的 `Q`。每个耦合在两层之间的块上加 `-4·W`，在两个对角块上各加 `2·W.sum(axis)`；每个场加 `-2·H`。上面单隐层的情形就是隐层到输出的耦合 `V`，以及场 `H_h`、`H_o`。学习率按层设置（`--lr-weights`、`--lr-biases`，每个连接一个值），另有只作用于权重的 `--weight-decay`，以及缩放各层初始均匀分布范围的 `--init-gains`。
 
 默认的 `--n-hidden 64` 构造出的网络和初始权重，与归档运行完全相同。
 
@@ -97,8 +97,7 @@ SDK 的 QUBO 到 Ising 转换会追加一个规范自旋（Ising 耦合矩阵没
 
 ```
 src/ising_ep/            可复用核心，不含实验细节
-  model.py               层堆叠、参数与 EP 能量（torch.nn.Module）
-  mapping.py             EP 与 QUBO 的映射，任意深度均为块三对角
+  model.py               层堆叠、参数、EP 能量和 QUBO（torch.nn.Module）
   kaiwu_solver.py        唯一导入 kaiwu 的模块
 examples/mnist_kaiwu/    MNIST/100 实验
   data.py                确定性的 MNIST/100 子集

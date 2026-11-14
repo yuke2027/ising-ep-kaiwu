@@ -82,7 +82,8 @@ def derived_int(seed: int, domain: str, *parts: int) -> int:
     Hashing the seed together with a domain string keeps the different random
     streams independent: the model initialization, the epoch shuffle and each
     sample's anneal cannot accidentally share a value just because their
-    indices coincide.
+    indices coincide. The hash only splits those streams. It is not stored and
+    it is not a provenance record.
 
     Args:
         seed: Experiment seed for this run.
