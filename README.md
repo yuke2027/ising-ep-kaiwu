@@ -158,10 +158,6 @@ tests/integration/       Skipped automatically without the licensed SDK
 results/digits/          Digits main experiment: reference and tuned runs
 results/primary/         MNIST/100 three-seed run (read-only evidence)
 results/tuned/           MNIST/100 tuned runs
-docs/                    Kaiwu SDK hands-on notes
-tools/ep_p0/             Upstream-plugin setup helper, not part of the package
-records/ep-p0/           Upstream-plugin setup records
-.kiro/specs/             Phase specifications
 ```
 
 Only `kaiwu_solver.py` touches the SDK, and it imports it lazily, so everything

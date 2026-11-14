@@ -34,5 +34,11 @@ archive/ising-ep-kaiwu-delivery/
 archive/runs-alignment-h64-e5/
 .devin/
 
+# Kept locally. The submitted tree is src, tests, examples and the JSON results.
+docs/
+tools/
+records/
+.kiro/
+
 *.log
 .DS_Store

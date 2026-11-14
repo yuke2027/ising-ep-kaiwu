@@ -112,10 +112,6 @@ tests/integration/       没有授权 SDK 时自动跳过
 results/digits/          Digits 主实验：参考运行与调参运行
 results/primary/         MNIST/100 的三次种子运行（只读证据）
 results/tuned/           MNIST/100 的调参运行
-docs/                    Kaiwu SDK 实操手册
-tools/ep_p0/             上游插件环境准备工具，不属于本包
-records/ep-p0/           上游插件环境准备记录
-.kiro/specs/             各阶段规格
 ```
 
 只有 `kaiwu_solver.py` 接触 SDK，而且是懒导入，所以其余部分在没有企业版 wheel 时也能导入和测试。
