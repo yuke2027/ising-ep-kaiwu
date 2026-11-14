@@ -241,6 +241,8 @@ MNIST/100 是第二个实验。冒烟运行（一个种子，小网络，几分�
 
 `.npz` 文件保存 `weights.0 … weights.K` 和 `biases.0 … biases.K`，输入层在前。归档运行早于这个布局，用的是单隐层的旧名字：`W`、`V`、`b_h`、`b_o` 分别对应 `weights.0`、`weights.1`、`biases.0`、`biases.1`，数值相同。
 
+提交进 `results/` 的只有 `config.json`、`summary.json`、各种子的 `status.json` 和 `test/metrics.json`，以及带验证集的运行里每个 epoch 的 `validation.json`。参数快照、翻转率和逐样本预测留在本地的 `runs/`。
+
 所有随机量都从种子派生，因此给定的 `(种子, 配置)` 逐位复现：初始化、每个 epoch 的打乱、每个样本成对退火的种子，以及评估种子。
 
 ---

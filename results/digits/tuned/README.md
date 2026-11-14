@@ -7,6 +7,10 @@ evaluated **once** on the 360 test images. The reference is
 [`../primary/`](../primary/README.md) (64-64-40, `β = 1`, test accuracy
 10.0% ± 0.2%, tie rate 100%).
 
+The archive keeps the configuration, the summary, each seed's status, the test
+metrics and the per-epoch validation records. Parameter snapshots and
+per-sample predictions stay local.
+
 ## Procedure
 
 - **Hyperparameters were chosen on the validation split only.**

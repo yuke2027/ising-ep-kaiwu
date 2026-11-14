@@ -19,14 +19,12 @@ Produced on 2026-09-30 by the current code (`config.json` records
 ```
 config.json                         Model, training and annealing settings
 summary.json                        Cross-seed statistics
-seeds/<seed>/initial-model.npz      Parameters before training
 seeds/<seed>/status.json            Accuracy, tie rate, per class, learning evidence
-seeds/<seed>/checkpoint.npz         Parameters after the final epoch
-seeds/<seed>/epochs/<e>/model.npz   Per-epoch parameter snapshot
-seeds/<seed>/epochs/<e>/dynamics.json   Two-phase flip rates for that epoch
 seeds/<seed>/test/metrics.json      Confusion matrix and per-class detail
-seeds/<seed>/test/predictions.json  Per-sample predictions
 ```
+
+Parameter snapshots, per-epoch flip rates and per-sample predictions are not in
+this directory. A local run still writes them under `--output`.
 
 ## Headline numbers
 
@@ -49,7 +47,6 @@ from pathlib import Path
 root = Path("results/primary")
 summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
 print(summary["accuracy"])          # mean / std / min / max
-
-with __import__("numpy").load(root / "seeds/0/checkpoint.npz") as ckpt:
-    print({k: ckpt[k].shape for k in ckpt.files})   # W, V, b_h, b_o
+status = json.loads((root / "seeds/0/status.json").read_text(encoding="utf-8"))
+print(status["accuracy"], status["tie_rate"])
 ```

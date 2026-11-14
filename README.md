@@ -325,6 +325,11 @@ layer first. The archived run predates this layout and uses the single-hidden
 names: `W`, `V`, `b_h`, `b_o` correspond to `weights.0`, `weights.1`, `biases.0`,
 `biases.1`, with identical values.
 
+What is committed under `results/` is `config.json`, `summary.json`, each seed's
+`status.json` and `test/metrics.json`, plus `epochs/<e>/validation.json` when a
+run used a validation split. Parameter snapshots, flip rates and per-sample
+predictions stay in the local `runs/` directory.
+
 Everything random derives from the seed, so a given `(seed, configuration)` pair
 reproduces bit for bit: initialization, the per-epoch shuffle, each sample's
 paired anneal seed, and the evaluation seeds.

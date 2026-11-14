@@ -15,14 +15,11 @@
 ```
 config.json                         模型、训练与退火设置
 summary.json                        跨种子统计
-seeds/<seed>/initial-model.npz      训练前的参数
 seeds/<seed>/status.json            准确率、平局率、逐类结果、学习证据
-seeds/<seed>/checkpoint.npz         最后一个 epoch 之后的参数
-seeds/<seed>/epochs/<e>/model.npz   每个 epoch 的参数快照
-seeds/<seed>/epochs/<e>/dynamics.json   该 epoch 的两相翻转率
 seeds/<seed>/test/metrics.json      混淆矩阵与逐类细节
-seeds/<seed>/test/predictions.json  逐样本预测
 ```
+
+参数快照、每个 epoch 的翻转率和逐样本预测不在这个目录里。一次本地运行仍会把它们写到 `--output` 下面。
 
 ## 主要数字
 
@@ -44,7 +41,6 @@ from pathlib import Path
 root = Path("results/primary")
 summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
 print(summary["accuracy"])          # mean / std / min / max
-
-with __import__("numpy").load(root / "seeds/0/checkpoint.npz") as ckpt:
-    print({k: ckpt[k].shape for k in ckpt.files})   # W, V, b_h, b_o
+status = json.loads((root / "seeds/0/status.json").read_text(encoding="utf-8"))
+print(status["accuracy"], status["tie_rate"])
 ```

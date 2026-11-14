@@ -4,6 +4,10 @@ Two configurations that beat the reference run on a validation split, then were
 scored on the 100 test images **exactly once**. The reference is
 [`results/primary/`](../primary) (784-64-40, `β = 1`, 38.3% ± 16.8% test accuracy).
 
+The archive keeps the configuration, the summary, each seed's status, the test
+metrics and the per-epoch validation records. Parameter snapshots and
+per-sample predictions stay local.
+
 ## Protocol
 
 - **Hyperparameters were chosen on validation only.** The validation split is

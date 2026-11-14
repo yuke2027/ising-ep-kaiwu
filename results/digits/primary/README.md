@@ -7,6 +7,9 @@ tuned runs are in [`../tuned/`](../tuned/README.md).
 
 Do not overwrite this directory. Point `--output` at a new path instead.
 
+The archive keeps JSON only. Parameter snapshots, flip rates and per-sample
+predictions stay in the local run directory.
+
 ## Provenance
 
 Produced on 2026-11-14 with Kaiwu 1.4.1 by the current code (`config.json`

@@ -40,5 +40,10 @@ tools/
 records/
 .kiro/
 
+# Parameter snapshots and per-sample logs stay in local runs.
+results/**/*.npz
+results/**/dynamics.json
+results/**/predictions.json
+
 *.log
 .DS_Store
